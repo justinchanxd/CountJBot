@@ -1,0 +1,12 @@
+<component name="libraryTable">
+  <library name="mongo-java-driver-3.5.0">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/lib/mongo-java-driver-3.5.0.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/slf4j-api-1.6.2.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/slf4j-nop-1.6.2.jar!/" />
+      <root url="jar://$PROJECT_DIR$/lib/telegrambots-3.6.1-jar-with-dependencies.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

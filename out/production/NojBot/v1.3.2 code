@@ -1,0 +1,378 @@
+
+import com.mongodb.*;
+import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
+import com.mongodb.client.MongoDatabase;
+
+import static com.mongodb.client.model.Filters.*;
+import static com.mongodb.client.model.Projections.fields;
+import static com.mongodb.client.model.Projections.include;
+
+import com.mongodb.client.model.Accumulators;
+import com.mongodb.client.model.Aggregates;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Projections;
+import com.mongodb.util.JSON;
+import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.joda.time.DateTime;
+import org.joda.time.Days;
+import org.joda.time.LocalDate;
+import org.joda.time.format.DateTimeFormat;
+import org.json.JSONObject;
+import org.telegram.telegrambots.api.methods.send.SendMessage;
+import org.telegram.telegrambots.api.objects.Update;
+import org.telegram.telegrambots.api.objects.replykeyboard.ReplyKeyboardMarkup;
+import org.telegram.telegrambots.api.objects.replykeyboard.ReplyKeyboardRemove;
+import org.telegram.telegrambots.api.objects.replykeyboard.buttons.KeyboardRow;
+import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.exceptions.TelegramApiException;
+
+import javax.print.Doc;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class nojBot extends TelegramLongPollingBot {
+
+    final String dateRE = "^[0-9]{4}-[0-9]{2}-[0-9]{2}$";
+    final String dayRE = "/start [0-9]{1,9}$";
+    final private String apitoken = "406829116:AAGZwbYez2B2l6zz-rGh9LFK6nNLEGj7FZk";
+    final private long admintgId = 378426983;
+
+    MongoClientURI connectionString = new MongoClientURI("mongodb://admin:noj134679@ds261755.mlab.com:61755/nojbot");
+    MongoClient mongoClient = new MongoClient(connectionString);
+    MongoDatabase database = mongoClient.getDatabase("nojbot");
+    MongoCollection<Document> collection = database.getCollection("user");
+
+    @Override
+    public void onUpdateReceived(Update update) {
+
+        if (update.hasMessage() && update.getMessage().hasText()) {
+            long channel_id = update.getMessage().getChat().getId();
+            long user_id = update.getMessage().getFrom().getId();
+            int msgId = update.getMessage().getMessageId();
+//            next two lines for testing different users, which is my id +1
+//            final long uid= update.getMessage().getFrom().getId() ;
+//            long user_id = uid+1;
+            String userFirstname = update.getMessage().getFrom().getFirstName();
+            String userLastname = update.getMessage().getFrom().getLastName();
+            String user_fullname = getFullname(userFirstname,userLastname);
+
+            String user_username = update.getMessage().getFrom().getUserName();
+            sendToAdmin(user_id,user_username,user_fullname);
+
+
+
+            System.out.println(user_fullname);
+            //System.out.println("Channel id: " + channel_id + ", User id: " + user_id + ", username: " + user_username);
+            // Set variables
+            String msg = update.getMessage().getText();
+
+            if(msg.equals("/start") || msg.equals("/start@CountJBot")) {
+                if (userExist(user_id, channel_id)) {
+                    sendMsg(channel_id, "系統已經有你嘅記錄!",msgId);
+                } else {
+                    sendMsg(channel_id, "請填上今日day數 e.g.你今日day 7\n打/start 7", msgId);
+                }
+            }
+            else if (msg.startsWith("/start")) {
+                String startDateString = getDatebyDay(msg,channel_id);
+
+                if (userExist(user_id, channel_id)) {
+                    sendMsg(channel_id, "系統已經有你嘅記錄!",msgId);
+                }
+                else if(startDateString!="null") {
+                    createUser(user_id, user_username,user_fullname, channel_id, startDateString,msgId);
+                } else {
+                    sendMsg(channel_id, "日期格式唔啱,請入多次",msgId);
+//                Get start date by entering date
+//                sendMsg(channel_id, "請填上開始戒的日子(e.g. 2017-01-16)");
+//                String startDateString;
+//                String correctDate = checkDate(msg, channel_id);
+//                LocalDate startDate = getDatebyDate(correctDate, channel_id);
+
+                    //if it passes the joda date check
+//                if (startDate != null) {
+//                    startDateString = startDate.toString();
+//                    System.out.println("database storing: "+startDateString);
+//                    //Not writing current date to database, just for calculating days
+//
+//                    if (compareDate(startDate, currentDate)) {
+//                        sendMsg(channel_id, "Day "
+//                                + String.valueOf(Days.daysBetween(startDate, currentDate).getDays())+
+//                        ", 資料傳送中...");
+//                        createUser(user_id, user_username, collection, channel_id, startDateString);
+//                    } else {
+//                       // sendMsg(channel_id, correctDate + "? 而家戒啦仲等!再入過!");
+//                    }
+//
+//                }
+                }
+            } else if(msg.equals("/help") || msg.equals("/help@CountJBot")) {
+                sendMsg(channel_id,"NojBot指令:\n/start [day]: 建立打J記錄 \n" +
+                        "/status: 查看打J記錄\n/jed: 破戒\n注意:一但成功使用/create,不能再新增記錄\n" +
+                        "如有任何疑問,請搵@justinchanxd",msgId);
+            }
+            // Check if user data exist in database
+            else if (!userExist(user_id, channel_id)) {
+                sendMsg(channel_id, "請先打/start 建立記錄",msgId);
+            } else if (msg.equals("/status")||msg.equals("/status@CountJBot")) {
+                printStatus(user_id,channel_id,msgId);
+
+            } else if (msg.equals("/jed")|| msg.equals("/jed@CountJBot")) {
+                jedConfirm(user_id,channel_id,msgId);
+            } else if(msg.equals("我破戒了...")){
+                jedRemove(user_id,channel_id,msgId);
+                jed(user_id, channel_id,msgId);
+            } else if(msg.equals("無J到打錯command :)")){
+                jedRemove(user_id,channel_id,msgId);
+            }
+//            else if(msg.equals("/delete")) {
+//                deleteDoc(user_id,collection,channel_id,msgId);
+//            }
+        }
+    }
+
+    private void jedConfirm(long user_id, long channel_id, int msgId) {
+        SendMessage message = new SendMessage() // Create a message object object
+                .setChatId(channel_id)
+                .setReplyToMessageId(msgId)
+                .setText("請按下按鈕確認");
+        ReplyKeyboardMarkup keyboardjed = new ReplyKeyboardMarkup();
+        keyboardjed.setOneTimeKeyboard(true);
+        // Create the keyboard (list of keyboard rows)
+        List<KeyboardRow> keyboard = new ArrayList<>();
+        // Create a keyboard row
+        KeyboardRow row = new KeyboardRow();
+        // Set each button, you can also use KeyboardButton objects if you need something else than text
+        row.add("我破戒了...");
+        row.add("無J到打錯command :)");
+        // Add the first row to the keyboard
+        keyboard.add(row);
+        keyboardjed.setKeyboard(keyboard);
+        message.setReplyMarkup(keyboardjed);
+        try {
+            execute(message); // Sending our message object to user
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+
+    }
+    private void jedRemove(long user_id,long channel_id,int msgId) {
+        SendMessage msg = new SendMessage()
+                .setChatId(channel_id)
+                .setText("...ok");
+        ReplyKeyboardRemove keyboardMarkup = new ReplyKeyboardRemove();
+        msg.setReplyMarkup(keyboardMarkup);
+        try {
+            sendMessage(msg); // Call method to send the photo
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendToAdmin(long user_id, String user_username, String user_fullname) {
+        if(user_username == null){
+            sendMsg(admintgId,"Null username user id:"+user_id+"\nFullname:"+user_fullname,0);
+        }
+    }
+
+
+    private String getFullname(String userF, String userL) {
+        String fullname;
+        if(userL==null) {
+            fullname=userF;
+        } else {
+            fullname = userF +userL;
+        }
+        return fullname;
+
+    }
+
+    @Override
+    public String getBotUsername() {
+        return "DatabaseBot";
+    }
+
+    @Override
+    public String getBotToken() {
+        return apitoken;
+    }
+
+    private void createUser(long user_id, String username, String fullname, long channel_id,
+                            String startDate,int msgId) {
+        //create user record in database
+        try {
+            Document doc = new Document("tg_id", user_id)
+                    .append("username", username)
+                    .append("fullname",fullname)
+                    .append("startDate", startDate);
+            collection.insertOne(doc);
+
+
+            sendMsg(channel_id, "記錄建立完成!", msgId);
+        } catch (Exception e) {
+            System.out.println(e.getClass().getName() + ": " + e.getMessage());
+        }
+
+    }
+
+    private boolean userExist(long user_id, long channel_id) {
+        //check if user data exist in the database
+        Document myDoc = collection.find(eq("tg_id", user_id)).first();
+        if (myDoc != null) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    private void jed(long user_id, long channel_id,int msgId) {
+        LocalDate currentDate = new LocalDate();
+        Document userDoc = collection.find(eq("tg_id",user_id)).first();
+        if(userDoc != null){
+            String username = userDoc.getString("username");
+            String fullname = userDoc.getString("fullname");
+            int dayNo = getDayNo(user_id);
+            Bson updatevalue = new Document("startDate",currentDate.toString());
+            Bson updateDoc = new Document("$set",updatevalue);
+            collection.updateOne(userDoc,updateDoc);
+            if(username == null && fullname ==null){
+                sendMsg(channel_id,"你已從 day"+ dayNo + "降至 day0...",msgId);
+            }
+            //Temporary for fixing unrecognized null username user
+            else if(username == null && fullname !=null){
+                sendMsg(channel_id,fullname+"已從 day"+ dayNo + "降至 day0...",msgId);
+            }
+            else {
+                sendMsg(channel_id, username + " 已從 day" + dayNo +
+                        " 降至 day0...", msgId);
+            }
+
+        }
+    }
+    private void sendMsg(long channel_id, String msg, int msgId) {
+        //send msg to user/group
+        SendMessage message = new SendMessage() // Create a message object object
+                .setChatId(channel_id)
+                .setText(msg)
+                .setReplyToMessageId(msgId);
+        try {
+            execute(message);
+            System.out.println(msg);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    private String getDatebyDay(String inputDate, long channel_id) {
+        LocalDate startDate = null;
+        String startDateString = "null";
+        Pattern dayPattern = Pattern.compile(dayRE);
+        Matcher dayMatcher = dayPattern.matcher(inputDate);
+        LocalDate currentDate = new LocalDate();
+
+        if (dayMatcher.find() && dayMatcher.group().length() != 0) {
+            String cmdDate = dayMatcher.group(0);
+            String[] splitDate = cmdDate.split("\\s+");
+            startDate = currentDate.minusDays(Integer.parseInt(splitDate[1]));
+            System.out.println("Input date is: "+ startDate);
+            startDateString = startDate.toString();
+        }
+        return startDateString;
+    }
+
+    private void printStatus(long user_id, long channel_id,int msgId) {
+        // get user status
+        Document myDoc = collection.find(eq("tg_id", user_id)).first();
+
+        String username = myDoc.getString("username");
+        String fullname = myDoc.getString("fullname");
+        LocalDate startDate = new LocalDate(myDoc.getString("startDate"));
+        LocalDate currentDate = new LocalDate();
+        if(username == null && fullname ==null){
+            sendMsg(channel_id,"你今日 day"+ String.valueOf(Days.daysBetween(startDate, currentDate).getDays()) + "!",msgId);
+        }
+        //Temporary for fixing unrecognized null username user
+        else if(username == null && fullname !=null) {
+            sendMsg(channel_id,fullname+"今日 day"+ String.valueOf(Days.daysBetween(startDate, currentDate).getDays()) + "!",msgId);
+        }
+        else {
+            sendMsg(channel_id, username + " 今日 day" + String.valueOf(Days.daysBetween(startDate, currentDate).getDays()) + "!",
+                    msgId);
+        }
+    }
+    private int getDayNo(long user_id) {
+        Document myDoc = collection.find(eq("tg_id", user_id)).first();
+        JSONObject docJson = new JSONObject(myDoc);
+        LocalDate startDate = new LocalDate(docJson.getString("startDate"));
+        LocalDate currentDate = new LocalDate();
+        return Days.daysBetween(startDate, currentDate).getDays();
+    }
+
+    private void getStat () {
+        Block<Document> printBlock = document -> System.out.println(document.toJson());
+        collection.aggregate(
+                Arrays.asList(
+                        Aggregates.match(Filters.gt("Age",20)),
+                        Aggregates.group("$username", Accumulators.sum("count",1))
+                )
+        ).forEach(printBlock);
+
+    }
+    private void deleteDoc (long user_id, long channel_id,int msgId) {
+        Document userDoc = collection.find(eq("tg_id", user_id)).first();
+        if(userDoc != null){
+            collection.deleteOne(userDoc);
+            sendMsg(channel_id,"已經刪除你的記錄",msgId);
+
+        } else{
+            sendMsg(channel_id,"刪除不成功",msgId);
+        }
+    }
+    private String checkDate(String inputDate, long channel_id,int msgId) {
+        //check user input date with regular expression
+        String correctDate = "false";
+        Pattern datePattern = Pattern.compile(dateRE);
+        Matcher dateMatcher = datePattern.matcher(inputDate);
+
+        if (dateMatcher.find() && dateMatcher.group().length() != 0) {
+            //sendMsg(channel_id, "你輸入嘅日期係: " + dateMatcher.group(0));
+            correctDate = dateMatcher.group(0);
+        } else {
+            sendMsg(channel_id, "日期格式唔啱,請入多次",msgId);
+        }
+        return correctDate;
+    }
+
+    private LocalDate getDatebyDate(String correctDate, long channel_id,int msgId) {
+        // check user input date with joda date calendar
+        LocalDate startDate = null;
+        // if input date is valid
+        if (!correctDate.equals("false")) {
+            try {
+                startDate = new LocalDate(correctDate);
+            } catch (Exception e) {
+                if (e.toString().contains("IllegalFieldValueException")) {
+                    sendMsg(channel_id, correctDate + "? 打到傻左呀? 再入過!",msgId);
+                }
+            }
+            //System.out.println(startDate);
+        }
+        return startDate;
+    }
+
+    private boolean compareDate(LocalDate startDate, LocalDate currentDate) {
+        // check if user input date is larger than current date
+        if (startDate.isAfter(currentDate)) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+}
+
